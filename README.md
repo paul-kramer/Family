@@ -13,9 +13,13 @@ Benötigte Repo-Secrets:
 
 Der Kalenderlink steht bewusst nicht im Code.
 
-## Daten
+## Daten (Supabase)
 
-Kinder, Aufgaben und PIN werden verschlüsselt als `setup.enc.json` im Repo abgelegt, sobald ein Eltern-Gerät einen Zugangsschlüssel (Fine-grained Token, nur Repo „Family“, Contents: Read and write) unter Eltern → „Handy-Abgleich“ eingetragen hat. Alle Geräte mit dem Link holen Änderungen alle 2 Minuten ab. Die Häkchen der Kinder bleiben auf dem jeweiligen Gerät. Unter „PIN & Sicherung“ lässt sich alles zusätzlich als Datei sichern.
+Kinder, Aufgaben, PIN und Häkchen liegen in einer Supabase-Datenbank und sind auf allen Geräten mit dem Link sofort gleich.
+
+Einrichtung: Projekt auf supabase.com anlegen (Region Frankfurt), `supabase/schema.sql` im SQL Editor ausführen, dann Project URL und anon-Schlüssel in `config.js` eintragen.
+
+Die Tabellen sind für den öffentlichen Schlüssel gesperrt. Lesen und Schreiben geht nur über Funktionen, die den Familien-Schlüssel aus dem Link (`#k=…`) verlangen; gespeichert ist davon nur die SHA-256-Prüfsumme. Ohne Verbindung arbeitet die App mit dem Stand auf dem Gerät weiter. Unter „PIN & Sicherung“ lässt sich alles zusätzlich als Datei sichern.
 
 ## iOS-App (ios/)
 

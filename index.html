@@ -185,6 +185,8 @@ h1,h2,h3{font-family:var(--font-display);margin:0;line-height:1.1;text-wrap:bala
 </div>
 <div id="layer"></div>
 
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 (function(){
 const SLOTS=[{id:'morgens',label:'Morgens'},{id:'nachmittags',label:'Nachmittags'},{id:'abends',label:'Abends'}];
@@ -231,8 +233,8 @@ function persist(){const o={setup:S.setup,setupUpdated:S.setupUpdated||'',events
 function pruneDone(d){const lim=iso(addDays(new Date(),-60));const o={};Object.keys(d).forEach(k=>{if(k>=lim)o[k]=d[k]});return o}
 async function saveSetup(setup){S.setup=setup;S.setupUpdated=new Date().toISOString();persist();render();schedulePush()}
 async function saveEvents(items){S.manual=items.filter(e=>e.src!=='ics');S.events=S.manual.concat(S.cal);persist();render()}
-async function setDone(date,key,val){S.done[date]=Object.assign({},S.done[date]||{},{[key]:val});persist();render()}
-function subscribeWeek(){}
+async function setDone(date,key,val){S.done[date]=Object.assign({},S.done[date]||{},{[key]:val});persist();render();pushDone(date,key,val)}
+function subscribeWeek(){remoteLoad(false)}
 
 /* ---------- iCloud-Kalender (verschlüsselt im Repo) ---------- */
 const b64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
@@ -262,62 +264,65 @@ async function loadCalendar(){
   render();
 }
 
-/* ---------- Abgleich der Einstellungen über GitHub (verschlüsselt) ---------- */
-const REPO='paul-kramer/Family',SETUP_PATH='setup.enc.json',API='https://api.github.com/repos/'+REPO;
-const b64e=u8=>{let s='';for(let i=0;i<u8.length;i++)s+=String.fromCharCode(u8[i]);return btoa(s)};
-async function encryptText(text,pass){
-  const iter=200000,salt=crypto.getRandomValues(new Uint8Array(16)),iv=crypto.getRandomValues(new Uint8Array(12));
-  const km=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
-  const key=await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:iter,hash:'SHA-256'},km,{name:'AES-GCM',length:256},false,['encrypt']);
-  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(text)));
-  return {v:1,iter,salt:b64e(salt),iv:b64e(iv),data:b64e(ct)};
+/* ---------- Gemeinsame Datenbank (Supabase) ---------- */
+let sb=null,chan=null,famRange='',pushT=null;
+S.syncMsg='';S.live=false;
+function dbReady(){return !!(sb&&getKey())}
+function initDb(){
+  const c=window.FZ_CONFIG||{};
+  if(!window.supabase||!c.supabaseUrl||/EINTRAGEN/.test(c.supabaseUrl+c.supabaseAnonKey))return;
+  try{sb=window.supabase.createClient(c.supabaseUrl,c.supabaseAnonKey,{auth:{persistSession:false,autoRefreshToken:false}})}catch(e){sb=null}
 }
-function getToken(){try{return localStorage.getItem('fz.token')||''}catch(e){return ''}}
-function ghHeaders(){const h={'Accept':'application/vnd.github+json'};const t=getToken();if(t)h.Authorization='Bearer '+t;return h}
-S.sha=null;S.syncMsg='';S.remoteMissing=false;
-let pulling=false;
-async function pullSetup(){
-  const pass=getKey();if(!pass||pulling)return;pulling=true;
+async function channelName(){
+  const h=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode('fz-chan:'+getKey())));
+  return 'fz-'+Array.from(h.slice(0,12)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+async function connectLive(){
+  if(!dbReady()||chan)return;
+  chan=sb.channel(await channelName(),{config:{broadcast:{self:false}}});
+  chan.on('broadcast',{event:'changed'},()=>remoteLoad(true));
+  chan.subscribe(st=>{S.live=st==='SUBSCRIBED';render()});
+}
+function announce(){if(chan&&S.live)chan.send({type:'broadcast',event:'changed',payload:{}}).catch(()=>{})}
+function rangeFor(date){const ws=weekStart(parseISO(date));return[iso(addDays(ws,-7)),iso(addDays(ws,13))]}
+let loading=false;
+async function remoteLoad(force){
+  if(!dbReady()||loading)return;
+  const[from,to]=rangeFor(S.date);
+  if(!force&&famRange===from+to&&S.lastLoad&&Date.now()-S.lastLoad<5000)return;
+  loading=true;
   try{
-    const r=await fetch(API+'/contents/'+SETUP_PATH+'?ref=main&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'});
-    if(r.status===404){S.sha=null;S.remoteMissing=true;if(getToken()&&S.setupUpdated)schedulePush();return}
-    S.remoteMissing=false;
-    if(!r.ok){S.syncMsg='Abgleich gerade nicht möglich (GitHub antwortet mit '+r.status+').';return}
-    const j=await r.json();S.sha=j.sha;
-    const pkg=JSON.parse(atob(String(j.content).replace(/\s/g,'')));
-    const obj=JSON.parse(await decrypt(pkg,pass));
-    if(obj&&obj.setup&&String(obj.updated||'')>String(S.setupUpdated||'')){
-      S.setup=obj.setup;S.setupUpdated=obj.updated;persist();render();
+    const{data,error}=await sb.rpc('fz_load',{p_key:getKey(),p_from:from,p_to:to});
+    if(error)throw error;
+    famRange=from+to;S.lastLoad=Date.now();
+    if(data===null){ // Familie existiert noch nicht: dieses Gerät legt sie mit seinem Stand an
+      S.setupUpdated=S.setupUpdated||new Date().toISOString();await pushSetup();return;
     }
-    const d=new Date(obj.updated);
-    S.syncMsg='Abgeglichen. Letzte Änderung: '+DN[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'. '+pad2(d.getHours())+':'+pad2(d.getMinutes())+' Uhr';
-  }catch(e){S.syncMsg='Abgleich fehlgeschlagen. Stimmt der Schlüssel im Link?'}
-  finally{pulling=false;if(S.parent===true&&S.tab==='sync')renderLayer()}
+    if(Date.parse(data.setup_updated)>(Date.parse(S.setupUpdated)||0)&&data.setup&&Array.isArray(data.setup.kids)){
+      S.setup=data.setup;S.setupUpdated=data.setup_updated;
+    }
+    for(let d=parseISO(from);iso(d)<=to;d=addDays(d,1)){const k=iso(d);if(data.done&&data.done[k])S.done[k]=data.done[k];else delete S.done[k]}
+    S.syncMsg='Verbunden mit der Familien-Datenbank.';
+    persist();render();
+  }catch(e){S.syncMsg='Datenbank gerade nicht erreichbar. Änderungen bleiben vorerst auf diesem Gerät.'}
+  finally{loading=false;if(S.parent===true&&S.tab==='sync')renderLayer()}
 }
-let pushT=null;
-function schedulePush(){
-  if(!getToken()){S.syncMsg='Diese Änderung gilt nur auf diesem Gerät. Für den Abgleich unter „Handy-Abgleich“ einen Zugangsschlüssel eintragen.';return}
-  clearTimeout(pushT);pushT=setTimeout(()=>pushSetup(true),800);
-}
-async function pushSetup(retry){
-  const pass=getKey(),tok=getToken();if(!pass||!tok)return;
+function schedulePush(){if(!dbReady())return;clearTimeout(pushT);pushT=setTimeout(pushSetup,600)}
+async function pushSetup(){
+  if(!dbReady())return;
   try{
-    const pkg=await encryptText(JSON.stringify({setup:S.setup,updated:S.setupUpdated||new Date().toISOString()}),pass);
-    const body={message:'Familienplan geändert',content:btoa(JSON.stringify(pkg)),branch:'main'};if(S.sha)body.sha=S.sha;
-    const r=await fetch(API+'/contents/'+SETUP_PATH,{method:'PUT',headers:Object.assign(ghHeaders(),{'Content-Type':'application/json'}),body:JSON.stringify(body)});
-    if(r.ok){const j=await r.json();S.sha=j.content&&j.content.sha;S.syncMsg='Gespeichert für alle Geräte.';toast('Für alle Geräte gespeichert')}
-    else if((r.status===409||r.status===422)&&retry){
-      const g=await fetch(API+'/contents/'+SETUP_PATH+'?ref=main&t='+Date.now(),{headers:ghHeaders(),cache:'no-store'});
-      S.sha=g.ok?(await g.json()).sha:null;await pushSetup(false);return;
-    }
-    else if(r.status===401||r.status===403||r.status===404){S.syncMsg='Der Zugangsschlüssel funktioniert nicht (Fehler '+r.status+'). Bitte unter „Handy-Abgleich“ prüfen.';toast('Abgleich fehlgeschlagen')}
-    else{S.syncMsg='Speichern auf GitHub fehlgeschlagen (Fehler '+r.status+').';toast('Abgleich fehlgeschlagen')}
-  }catch(e){S.syncMsg='Keine Verbindung. Die Änderung ist erst auf diesem Gerät gespeichert.';toast('Keine Verbindung')}
+    const{data,error}=await sb.rpc('fz_save_setup',{p_key:getKey(),p_setup:S.setup});
+    if(error)throw error;
+    S.setupUpdated=data;persist();announce();S.syncMsg='Gespeichert für alle Geräte.';
+  }catch(e){S.syncMsg='Speichern in der Datenbank fehlgeschlagen. Bitte später noch einmal ändern.';toast('Nicht gespeichert – keine Verbindung')}
   if(S.parent===true)renderLayer();
 }
-async function testToken(tok){
-  const r=await fetch(API,{headers:{'Accept':'application/vnd.github+json','Authorization':'Bearer '+tok}});
-  if(!r.ok)return false;const j=await r.json();return !!(j.permissions&&j.permissions.push);
+async function pushDone(date,key,val){
+  if(!dbReady())return;
+  try{
+    const{error}=await sb.rpc('fz_set_done',{p_key:getKey(),p_day:date,p_item:key,p_done:val});
+    if(error)throw error;announce();
+  }catch(e){toast('Häkchen nicht übertragen – keine Verbindung')}
 }
 async function start(){
   S.mode='local';const o=loadLocal();
@@ -325,8 +330,10 @@ async function start(){
   if(!o.setup)persist();
   render();loadCalendar();
   setInterval(loadCalendar,30*60*1000);
-  pullSetup();setInterval(pullSetup,2*60*1000);
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)pullSetup()});
+  initDb();
+  if(dbReady()){remoteLoad(true);connectLive();setInterval(()=>remoteLoad(true),60*1000);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)remoteLoad(true)})}
+  else S.syncMsg=sb?'Kein Familien-Schlüssel auf diesem Gerät. Öffne die App über den Link mit #k=…':'Datenbank ist noch nicht eingerichtet. Alles bleibt auf diesem Gerät.';
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadCalendar()});
 }
 
@@ -352,7 +359,7 @@ function render(){
   const k=kids(),ck=curKid();
   const t=new Date();
   $('#todayLbl').innerHTML='<b>'+DLONG[t.getDay()]+'</b>'+t.getDate()+'. '+MON[t.getMonth()];
-  $('#status').textContent=(storageOk?'Aufgaben und Häkchen sind auf diesem Gerät gespeichert.':'Speichern auf diesem Gerät ist blockiert.')+(S.calState?' · '+S.calState:'');
+  $('#status').textContent=(dbReady()?(S.live?'● Live verbunden':'Familien-Datenbank'):(storageOk?'Nur auf diesem Gerät gespeichert':'Speichern blockiert'))+(S.calState?' · '+S.calState:'');
   document.documentElement.style.setProperty('--slot','var(--'+S.slot+')');
   document.documentElement.style.setProperty('--slot-soft','var(--'+S.slot+'-soft)');
   const v=$('#view');
@@ -397,7 +404,7 @@ function renderLayer(){
   L.innerHTML='<div class="overlay" style="place-items:start center;overflow-y:auto"><div class="panel admin" style="width:min(1000px,100%);margin-block:10px">'+adminHtml()+'</div></div>';
 }
 function adminHtml(){
-  const tabs=[['aufgaben','Aufgaben'],['kinder','Kinder'],['termine','Termine'],['sync','Handy-Abgleich'],['pin','PIN & Sicherung']];
+  const tabs=[['aufgaben','Aufgaben'],['kinder','Kinder'],['termine','Termine'],['sync','Verbindung'],['pin','PIN & Sicherung']];
   let h='<div class="panel-head"><h2>Eltern-Bereich</h2><button class="btn primary" type="button" data-act="close">Fertig</button></div>';
   h+='<div class="tabs" role="tablist">'+tabs.map(t=>'<button type="button" class="tab" role="tab" data-tab="'+t[0]+'" aria-selected="'+(S.tab===t[0])+'">'+t[1]+'</button>').join('')+'</div>';
   if(S.readonly)h+='<p class="note">Mit diesem Zugang kannst du nichts ändern.</p>';
@@ -410,18 +417,9 @@ function adminHtml(){
   return h;
 }
 function syncAdmin(){
-  const has=!!getToken();
-  let h='<div class="field"><span>Status</span><p class="sub" style="margin:0">'+esc(S.syncMsg||(has?'Wird abgeglichen …':'Noch kein Zugangsschlüssel auf diesem Gerät.'))+'</p>'+
-   '<div class="row"><button class="btn" type="button" data-act="syncnow">Jetzt abgleichen</button></div></div>';
-  h+='<div class="field"><span>Zugangsschlüssel (GitHub-Token)</span>'+(has?'<div class="row"><span class="sub">Auf diesem Gerät eingerichtet.</span><button class="btn danger small" type="button" data-act="deltoken">Von diesem Gerät entfernen</button></div>':
-   '<div class="row"><input class="inp" style="flex:1;min-width:220px" id="tokIn" type="password" autocomplete="off" placeholder="github_pat_…"><button class="btn primary" type="button" data-act="savetoken">Speichern und prüfen</button></div>')+'</div>';
-  h+='<div class="note">Mit dem Zugangsschlüssel speichert dieses Gerät Änderungen an Kindern, Aufgaben und PIN verschlüsselt im GitHub-Repo. Alle Geräte mit dem Familienzeit-Link holen sie sich innerhalb von 2 Minuten. Die Häkchen der Kinder bleiben auf dem Gerät, auf dem sie gesetzt wurden.'+
-   '<ol><li>Auf github.com: Profilbild → Settings → Developer settings → Personal access tokens → Fine-grained tokens → „Generate new token“.</li>'+
-   '<li>Name „Familienzeit“, Ablauf z. B. 1 Jahr, bei „Repository access“ nur <b>Family</b> auswählen.</li>'+
-   '<li>Unter „Permissions“ bei <b>Contents</b> „Read and write“ wählen, dann „Generate token“.</li>'+
-   '<li>Den Token kopieren und hier einfügen. Auf dem Handy einmal den Familienzeit-Link öffnen und den Token dort ebenfalls eintragen.</li></ol>'+
-   'Trage den Token nur auf Eltern-Geräten ein, nicht auf dem iPad der Kinder, wenn du das vermeiden kannst. Für die Kinder reicht der Link: Sie bekommen Änderungen trotzdem.</div>';
-  return h;
+  return '<div class="field"><span>Status</span><p class="sub" style="margin:0">'+esc(S.syncMsg||'Wird verbunden …')+(S.live?' Änderungen erscheinen sofort auf allen Geräten.':'')+'</p>'+
+   '<div class="row"><button class="btn" type="button" data-act="syncnow">Jetzt abgleichen</button></div></div>'+
+   '<div class="note">Kinder, Aufgaben, PIN und Häkchen liegen in eurer Familien-Datenbank. Jedes Gerät, das den Familienzeit-Link mit <b>#k=…</b> geöffnet hat, sieht denselben Stand. Auf dem Handy: Link öffnen, „Eltern“ tippen, PIN eingeben, fertig.</div>';
 }
 function dayLabel(t){if(t.date){const d=parseISO(t.date);return 'nur am '+d.getDate()+'.'+(d.getMonth()+1)+'.'}const ds=(t.days||[]).slice().sort((a,b)=>((a+6)%7)-((b+6)%7));if(ds.length===7)return 'täglich';if(ds.join()==='1,2,3,4,5')return 'Mo–Fr';if(ds.join()==='6,0')return 'Wochenende';return ds.map(d=>DN[d]).join(', ')||'kein Tag'}
 function taskList(){
@@ -558,12 +556,7 @@ document.addEventListener('click',ev=>{
   else if(a==='addkid'){const n=$('#newKid').value.trim();if(!n){toast('Bitte einen Namen eingeben.');return}
     const s=setupCopy();const k={id:uid(),name:n,color:KIDCOLORS[s.kids.length%KIDCOLORS.length]};s.kids.push(k);if(!S.kid)S.kid=k.id;saveSetup(s)}
   else if(a==='savepin'){const p=$('#newPin').value;if(!/^\d{4}$/.test(p)){toast('Die PIN braucht genau 4 Ziffern.');return}const s=setupCopy();s.pin=p;saveSetup(s).then(()=>toast('PIN gespeichert'))}
-  else if(a==='syncnow'){S.syncMsg='Wird abgeglichen …';renderLayer();pullSetup()}
-  else if(a==='deltoken'){try{localStorage.removeItem('fz.token')}catch(e){};S.syncMsg='';renderLayer();toast('Zugangsschlüssel entfernt')}
-  else if(a==='savetoken'){const t=($('#tokIn').value||'').trim();if(!t){toast('Bitte den Token einfügen.');return}
-    toast('Wird geprüft …');testToken(t).then(ok=>{if(!ok){toast('Der Token hat keinen Schreibzugriff auf das Repo Family.');return}
-      try{localStorage.setItem('fz.token',t)}catch(e){toast('Speichern auf diesem Gerät ist blockiert.');return}
-      toast('Zugangsschlüssel gespeichert');pullSetup().then(()=>{if(S.remoteMissing){S.setupUpdated=S.setupUpdated||new Date().toISOString();persist();pushSetup(true)}});renderLayer()}).catch(()=>toast('Keine Verbindung zu GitHub.'))}
+  else if(a==='syncnow'){S.syncMsg='Wird abgeglichen …';renderLayer();remoteLoad(true)}
   else if(a==='reloadcal'){S.calState='Wird geladen …';renderLayer();loadCalendar().then(()=>toast('Kalender aktualisiert'))}
   else if(a==='export'){const blob=new Blob([JSON.stringify({app:'familienzeit',saved:new Date().toISOString(),setup:S.setup,events:S.manual,done:S.done},null,1)],{type:'application/json'});
     const l=document.createElement('a');l.href=URL.createObjectURL(blob);l.download='familienzeit-sicherung-'+iso(new Date())+'.json';document.body.appendChild(l);l.click();setTimeout(()=>{URL.revokeObjectURL(l.href);l.remove()},1000)}
