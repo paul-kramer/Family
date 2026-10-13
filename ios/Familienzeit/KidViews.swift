@@ -36,6 +36,8 @@ struct ContentView: View {
             }
         }
         .background(Color.page.ignoresSafeArea())
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
         .fullScreenCover(isPresented: $showParent) {
             ParentGate { showParent = false }
         }
