@@ -16,3 +16,29 @@ Der Kalenderlink steht bewusst nicht im Code.
 ## Daten
 
 Kinder, Aufgaben und Häkchen liegen im Speicher des Geräts. Unter „PIN & Sicherung“ lassen sie sich als Datei sichern und wieder laden.
+
+## iOS-App (ios/)
+
+Native SwiftUI-App für iPad und iPhone (ab iOS 17). Sie liest die Termine direkt aus den Kalendern des Geräts, auch aus iCloud. Dafür braucht sie weder den öffentlichen Kalender-Link noch die GitHub-Action.
+
+### Auf das iPad bringen
+
+1. Am Mac Xcode aus dem App Store installieren (Version 16 oder neuer).
+2. Repo herunterladen: in Xcode „Clone Git Repository…“ mit `https://github.com/paul-kramer/Family` oder per Terminal `git clone`.
+3. `ios/Familienzeit.xcodeproj` öffnen.
+4. Links das Projekt „Familienzeit“ anklicken → Target „Familienzeit“ → Reiter „Signing & Capabilities“ → bei „Team“ deine Apple-ID wählen (ggf. über „Add an Account…“ anmelden). Falls Xcode den Bundle Identifier ablehnt, hinten etwas anhängen, z. B. `de.paulkramer.familienzeit2`.
+5. iPad per Kabel anschließen, entsperren und „Diesem Computer vertrauen“ bestätigen.
+6. Auf dem iPad: Einstellungen → Datenschutz & Sicherheit → Entwicklermodus einschalten (iPad startet neu).
+7. In Xcode oben das iPad als Ziel wählen und auf ▶ klicken.
+8. Beim ersten Start auf dem iPad: Einstellungen → Allgemein → VPN & Geräteverwaltung → deiner Apple-ID vertrauen.
+9. Beim Start der App den Kalenderzugriff erlauben.
+
+Mit einer kostenlosen Apple-ID läuft die App 7 Tage und muss dann über Xcode neu installiert werden (Schritt 7). Mit dem Apple Developer Program (99 €/Jahr) gilt sie ein Jahr.
+
+### Kinder auf die App beschränken
+
+Einstellungen → Bedienungshilfen → Geführter Zugriff einschalten. In der App dreimal die obere Taste drücken, um sie zu sperren.
+
+### Daten aus der Web-Version übernehmen
+
+Web-Version: Eltern → PIN & Sicherung → „Sicherung speichern“. iOS-App: Eltern → PIN & Sicherung → „Sicherung laden“.
