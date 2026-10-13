@@ -15,7 +15,7 @@ Der Kalenderlink steht bewusst nicht im Code.
 
 ## Daten
 
-Kinder, Aufgaben und Häkchen liegen im Speicher des Geräts. Unter „PIN & Sicherung“ lassen sie sich als Datei sichern und wieder laden.
+Kinder, Aufgaben und PIN werden verschlüsselt als `setup.enc.json` im Repo abgelegt, sobald ein Eltern-Gerät einen Zugangsschlüssel (Fine-grained Token, nur Repo „Family“, Contents: Read and write) unter Eltern → „Handy-Abgleich“ eingetragen hat. Alle Geräte mit dem Link holen Änderungen alle 2 Minuten ab. Die Häkchen der Kinder bleiben auf dem jeweiligen Gerät. Unter „PIN & Sicherung“ lässt sich alles zusätzlich als Datei sichern.
 
 ## iOS-App (ios/)
 
