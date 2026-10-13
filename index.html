@@ -254,14 +254,27 @@ async function decrypt(pkg,pass){
 async function loadCalendar(){
   const pass=getKey();
   if(!pass){S.calState='Kein Kalender-Schlüssel auf diesem Gerät. Öffne die App einmal über den Link mit #k=…';render();return}
-  try{
+  if(!sb)initDb();
+  if(sb){ // 1. Weg: frisch von iCloud über die Supabase-Funktion
+    try{
+      const{data,error}=await sb.functions.invoke('calendar',{body:{key:pass}});
+      if(error)throw error;
+      if(data&&data.ics){
+        S.cal=expandICS(data.ics);S.events=S.manual.concat(S.cal);
+        const d=new Date(data.fetched);
+        S.calState='iCloud abgerufen um '+pad2(d.getHours())+':'+pad2(d.getMinutes())+' Uhr · '+S.cal.length+' Termine';
+        render();return;
+      }
+    }catch(e){/* weiter mit der Kopie aus GitHub */}
+  }
+  try{ // 2. Weg: verschlüsselte Kopie, die die GitHub-Action alle 2 Stunden ablegt
     const r=await fetch('calendar.enc.json?t='+Date.now(),{cache:'no-store'});
     if(!r.ok){S.calState='Noch kein Kalender abgerufen. Die Abholung läuft alle 2 Stunden.';render();return}
     const pkg=await r.json();
     const ics=await decrypt(pkg,pass);
     S.cal=expandICS(ics);S.events=S.manual.concat(S.cal);
     const d=new Date(pkg.updated);
-    S.calState='iCloud zuletzt abgeholt: '+DN[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'. um '+pad2(d.getHours())+':'+pad2(d.getMinutes())+' Uhr · '+S.cal.length+' Termine';
+    S.calState='Kopie vom '+DN[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'. um '+pad2(d.getHours())+':'+pad2(d.getMinutes())+' Uhr · '+S.cal.length+' Termine';
   }catch(e){S.calState='Kalender konnte nicht entschlüsselt werden. Stimmt der Schlüssel im Link?'}
   render();
 }
@@ -271,6 +284,7 @@ let sb=null,chan=null,famRange='',pushT=null;
 S.syncMsg='';S.live=false;
 function dbReady(){return !!(sb&&getKey())}
 function initDb(){
+  if(sb)return;
   const c=window.FZ_CONFIG||{};
   if(!window.supabase||!c.supabaseUrl||/EINTRAGEN/.test(c.supabaseUrl+c.supabaseAnonKey))return;
   try{sb=window.supabase.createClient(c.supabaseUrl,c.supabaseAnonKey,{auth:{persistSession:false,autoRefreshToken:false}})}catch(e){sb=null}
