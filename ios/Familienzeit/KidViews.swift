@@ -69,25 +69,18 @@ struct ContentView: View {
                 .tint(.secondary)
             }
 
+            // Die Woche bekommt gut ein Drittel der Bildschirmhöhe.
             WeekBar(date: $date)
+                .containerRelativeFrame(.vertical) { h, _ in
+                    compact ? 170 : min(max(h * 0.32, 170), 300)
+                }
 
-            if compact {
-                HStack(spacing: 8) {
-                    ForEach(Slot.allCases) { s in
-                        SlotButton(slot: s, selected: slot == s, date: date) { select(s) }
-                    }
+            HStack(spacing: compact ? 8 : 10) {
+                ForEach(Slot.allCases) { s in
+                    SlotButton(slot: s, selected: slot == s, date: date) { select(s) }
                 }
-                .frame(height: 96)
-                EventsBox(date: date).frame(minHeight: 70)
-            } else {
-                HStack(spacing: 10) {
-                    ForEach(Slot.allCases) { s in
-                        SlotButton(slot: s, selected: slot == s, date: date) { select(s) }
-                    }
-                    EventsBox(date: date).frame(maxWidth: 320)
-                }
-                .frame(height: 92)
             }
+            .frame(height: compact ? 84 : 66)
 
             if store.kids.isEmpty {
                 VStack(spacing: 12) {
@@ -139,52 +132,73 @@ struct WeekBar: View {
             }
             arrow("chevron.right") { date = Day.add(7, to: date) }
         }
-        .frame(height: 74)
     }
 
     private func dayButton(_ d: Date) -> some View {
         let selected = Calendar.current.isDate(d, inSameDayAs: date)
         let isToday = Calendar.current.isDateInToday(d)
-        let eventCount = cal.events(on: d, calendarIDs: store.data.calendarIDs).count
+        let events = cal.events(on: d, calendarIDs: store.data.calendarIDs)
         return Button { date = d } label: {
-            VStack(spacing: 2) {
-                Text(Day.short[Day.weekday(d)].uppercased())
-                    .font(.caption.weight(.heavy))
-                    .foregroundStyle(.secondary)
-                Text("\(Day.dayOfMonth(d))")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-                    .foregroundStyle(isToday ? Color.accentColor : Color.primary)
-                HStack(spacing: 3) {
-                    ForEach(Slot.allCases) { s in
-                        let st = store.totalStats(date: d, slot: s)
-                        if st.total > 0 {
-                            Circle()
-                                .fill(st.done == st.total ? Color.green : Color(uiColor: .systemGray4))
-                                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(Day.short[Day.weekday(d)].uppercased())
+                        .font(.caption2.weight(.heavy))
+                        .foregroundStyle(.secondary)
+                    Text("\(Day.dayOfMonth(d))")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .foregroundStyle(isToday ? Color.accentColor : Color.primary)
+                    Spacer(minLength: 0)
+                    HStack(spacing: 2) {
+                        ForEach(Slot.allCases) { s in
+                            let st = store.totalStats(date: d, slot: s)
+                            if st.total > 0 {
+                                Circle()
+                                    .fill(st.done == st.total ? Color.green : Color(uiColor: .systemGray4))
+                                    .frame(width: 7, height: 7)
+                            }
                         }
                     }
-                    if eventCount > 0 {
-                        Text("\(eventCount) T")
-                            .font(.caption2.weight(.heavy))
-                            .foregroundStyle(Color.accentColor)
+                }
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(Array(events.enumerated()), id: \.offset) { _, e in
+                            VStack(alignment: .leading, spacing: 0) {
+                                if !e.isAllDay {
+                                    Text(e.startDate.formatted(date: .omitted, time: .shortened))
+                                        .font(.caption2.weight(.heavy).monospacedDigit())
+                                        .foregroundStyle(Color.accentColor)
+                                }
+                                Text(e.title ?? "Termin")
+                                    .font(.caption.weight(.semibold))
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 3)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color(cgColor: e.calendar.cgColor).opacity(e.isAllDay ? 0.28 : 0.14))
+                            )
+                        }
                     }
                 }
-                .frame(height: 12)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: 14).fill(selected ? Color.chip : Color.card))
+            .padding(6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(RoundedRectangle(cornerRadius: 14).fill(isToday ? Color.accentColor.opacity(0.08) : Color.card))
             .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(selected ? Color.primary : Color.clear, lineWidth: 3))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(Day.long[Day.weekday(d)]) \(Day.dayOfMonth(d)).")
+        .accessibilityLabel("\(Day.long[Day.weekday(d)]) \(Day.dayOfMonth(d)), \(events.count) Termine")
     }
 
     private func arrow(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.title3.weight(.bold))
-                .frame(width: 44)
+                .frame(width: 36)
                 .frame(maxHeight: .infinity)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.card))
         }
@@ -209,7 +223,7 @@ struct SlotButton: View {
                 HStack(spacing: 10) {
                     icon
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(slot.label).font(.title2.weight(.heavy)).lineLimit(1)
+                        Text(slot.label).font(.title3.weight(.heavy)).lineLimit(1)
                         statusText(st, allDone)
                     }
                 }
@@ -230,7 +244,7 @@ struct SlotButton: View {
 
     private var icon: some View {
         Image(systemName: slot.symbol)
-            .font(.system(size: 30))
+            .font(.system(size: 24))
             .foregroundStyle(slot.color)
     }
 
@@ -239,49 +253,6 @@ struct SlotButton: View {
             .font(.subheadline.weight(.bold).monospacedDigit())
             .foregroundStyle(allDone ? Color.green : Color.secondary)
             .lineLimit(1)
-    }
-}
-
-// MARK: - Termine
-
-struct EventsBox: View {
-    let date: Date
-    @Environment(Store.self) private var store
-    @Environment(CalendarService.self) private var cal
-
-    var body: some View {
-        let events = cal.events(on: date, calendarIDs: store.data.calendarIDs)
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Termine \(Day.short[Day.weekday(date)]) \(Day.dayOfMonth(date)).")
-                .font(.subheadline.weight(.heavy))
-                .foregroundStyle(.secondary)
-            if !cal.authorized {
-                Text("Kalender nicht freigegeben").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            } else if events.isEmpty {
-                Text("Keine Termine").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 3) {
-                        ForEach(Array(events.enumerated()), id: \.offset) { _, e in
-                            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Circle().fill(Color(cgColor: e.calendar.cgColor)).frame(width: 8, height: 8)
-                                Text(e.isAllDay ? "ganzt." : e.startDate.formatted(date: .omitted, time: .shortened))
-                                    .font(.subheadline.weight(.heavy).monospacedDigit())
-                                    .foregroundStyle(Color.accentColor)
-                                    .frame(minWidth: 46, alignment: .leading)
-                                Text(e.title ?? "Termin")
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(2)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(RoundedRectangle(cornerRadius: 18).fill(Color.card))
     }
 }
 
@@ -299,15 +270,15 @@ struct KidColumn: View {
         let doneCount = tasks.filter { store.isDone(date, kid: kid.id, task: $0.id) }.count
         let allDone = !tasks.isEmpty && doneCount == tasks.count
 
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
                 Text(String(kid.name.prefix(1)).uppercased())
-                    .font(.title2.weight(.heavy))
+                    .font(.headline.weight(.heavy))
                     .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 32, height: 32)
                     .background(Circle().fill(kid.swiftColor))
                 Text(kid.name)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
                     .lineLimit(1)
                 Spacer()
                 if !tasks.isEmpty {
@@ -323,20 +294,20 @@ struct KidColumn: View {
                 list(tasks, allDone)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: scrolls ? .infinity : nil, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 22).fill(Color.card))
         .overlay(alignment: .top) {
             UnevenRoundedRectangle(topLeadingRadius: 22, topTrailingRadius: 22)
                 .fill(kid.swiftColor)
-                .frame(height: 8)
+                .frame(height: 6)
         }
     }
 
     private func list(_ tasks: [FamilyTask], _ allDone: Bool) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             if tasks.isEmpty {
                 Text("\(slot.label) ist nichts geplant.")
                     .font(.headline)
@@ -347,12 +318,12 @@ struct KidColumn: View {
             } else {
                 if allDone {
                     HStack(spacing: 10) {
-                        Image(systemName: "star.fill").font(.title).foregroundStyle(.yellow)
+                        Image(systemName: "star.fill").font(.title3).foregroundStyle(.yellow)
                             .symbolEffect(.bounce, value: allDone)
-                        Text("Super, \(kid.name)!").font(.title2.weight(.heavy))
+                        Text("Super, \(kid.name)!").font(.headline.weight(.heavy))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
+                    .padding(6)
                     .background(RoundedRectangle(cornerRadius: 14).fill(slot.soft))
                 }
                 ForEach(tasks) { t in
@@ -375,32 +346,32 @@ struct TaskRow: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Text(task.icon)
-                    .font(.system(size: 32))
-                    .frame(width: 44)
+                    .font(.system(size: 24))
+                    .frame(width: 32)
                 Text(task.title)
-                    .font(.title3.weight(.heavy))
+                    .font(.headline.weight(.heavy))
                     .strikethrough(done, color: .secondary)
                     .foregroundStyle(done ? Color.secondary : Color.primary)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12)
+                    RoundedRectangle(cornerRadius: 10)
                         .fill(done ? slot.color : Color.clear)
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(slot.color, lineWidth: 4)
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(slot.color, lineWidth: 3)
                     if done {
                         Image(systemName: "checkmark")
-                            .font(.title2.weight(.black))
+                            .font(.headline.weight(.black))
                             .foregroundStyle(.white)
                             .transition(.scale)
                     }
                 }
-                .frame(width: 44, height: 44)
+                .frame(width: 34, height: 34)
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 64)
-            .background(RoundedRectangle(cornerRadius: 16).fill(done ? slot.soft : Color.card))
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(done ? Color.clear : Color.hairline, lineWidth: 2))
+            .padding(.horizontal, 10)
+            .frame(minHeight: 48)
+            .background(RoundedRectangle(cornerRadius: 12).fill(done ? slot.soft : Color.card))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(done ? Color.clear : Color.hairline, lineWidth: 2))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
