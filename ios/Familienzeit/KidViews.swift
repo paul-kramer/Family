@@ -69,10 +69,10 @@ struct ContentView: View {
                 .tint(.secondary)
             }
 
-            // Die Woche bekommt gut ein Drittel der Bildschirmhöhe.
+            // Die Woche bekommt gut ein Fünftel der Bildschirmhöhe.
             WeekBar(date: $date)
                 .containerRelativeFrame(.vertical) { h, _ in
-                    compact ? 170 : min(max(h * 0.32, 170), 300)
+                    compact ? 130 : min(max(h * 0.22, 130), 210)
                 }
 
             HStack(spacing: compact ? 8 : 10) {
