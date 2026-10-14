@@ -157,10 +157,15 @@ h1,h2,h3{font-family:var(--font-display);margin:0;line-height:1.1;text-wrap:bala
 .chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
 .emojis{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:6px}
 .emojis button{height:50px;border-radius:12px;border:2px solid var(--line);background:var(--surface);font-size:1.6rem}
+.svgic{display:inline-flex;width:1.15em;height:1.15em;vertical-align:middle}.svgic svg{width:100%;height:100%}
+.emojis button{display:grid;place-items:center}
 .emojis button[aria-pressed="true"]{border-color:var(--accent);background:var(--surface-2)}
 .alist{display:flex;flex-direction:column;gap:8px;list-style:none;margin:0;padding:0}
 .aitem{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:14px;background:var(--surface-2);flex-wrap:wrap}
 .aitem .ic{font-size:1.6rem}
+.aitem .mv{display:flex;flex-direction:column;gap:4px}
+.aitem .mv button{width:44px;height:30px;border-radius:8px;border:2px solid var(--line);background:var(--surface);font-weight:800;line-height:1}
+.aitem .mv button:disabled{opacity:.3}
 .aitem .ai{flex:1;min-width:160px}
 .aitem .ai b{display:block}
 .aitem .ai small{color:var(--muted);font-weight:700}
@@ -198,7 +203,11 @@ const ICON={
  abends:'<svg viewBox="0 0 64 64" fill="none"><path d="M42 10a22 22 0 1 0 12 30A18 18 0 0 1 42 10z" fill="var(--abends)"/><circle cx="16" cy="16" r="2.5" fill="var(--abends)"/><circle cx="26" cy="8" r="1.8" fill="var(--abends)"/></svg>'
 };
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
-const EMOJIS=['🪥','👕','🧦','🛏️','🥣','🍎','🎒','📚','✏️','🧮','🎹','🏒','⚽','🚿','🛁','🧸','🧹','🍽️','🐶','🌱','💊','📖','🧥','👟','🚲','🎨','📞','⏰','🙏','⭐'];
+const SVGICONS={
+ 'svg:hockey':'<svg viewBox="0 0 64 64" aria-hidden="true"><path d="M8 58h48" stroke="#9FB0C3" stroke-width="3" stroke-linecap="round"/><path d="M27 33l-6 13-6 2M36 33l4 13 7 1" stroke="#1D2A3A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M12 50h9M42 49h9" stroke="#5D6B7D" stroke-width="3" stroke-linecap="round"/><path d="M23 18h18l3 17H20z" fill="#E0603A"/><path d="M24 26h16" stroke="#fff" stroke-width="2.5"/><circle cx="32" cy="12" r="7" fill="#F2C9A0"/><path d="M25 12a7 7 0 0 1 14 0v1H25z" fill="#2F6FD6"/><path d="M41 22l9 10" stroke="#E0603A" stroke-width="5" stroke-linecap="round"/><path d="M50 32l-4 22h-9" stroke="#8B5A2B" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/><ellipse cx="31" cy="55" rx="4" ry="1.8" fill="#1D2A3A"/></svg>'
+};
+function iconHtml(ic){ic=ic||'⭐';return SVGICONS[ic]?'<span class="svgic">'+SVGICONS[ic]+'</span>':esc(ic)}
+const EMOJIS=['🪥','👕','🧦','🛏️','🥣','🍎','🎒','📚','✏️','🧮','🎹','🏒','⚽','🚿','🛁','🧸','🧹','🍽️','🐶','🌱','💊','📖','🧥','👟','🚲','🎨','📞','⏰','svg:hockey','⛸️','📦','🧺','🗃️','📖','📺','🎮','🙏','⭐'];
 const KIDCOLORS=['#2F6FD6','#E0603A','#2E9E5B','#B04AC9','#D69A12','#1F9AA8'];
 const DN=['So','Mo','Di','Mi','Do','Fr','Sa'];
 const DLONG=['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'];
@@ -357,10 +366,12 @@ async function start(){
 const kids=()=>(S.setup&&S.setup.kids)||[];
 const tasks=()=>(S.setup&&S.setup.tasks)||[];
 function curKid(){const k=kids();return k.find(x=>x.id===S.kid)||k[0]||null}
+function ordOf(t,kid){return (t.orders&&t.orders[kid]!=null)?t.orders[kid]:(t.order||0)}
+function slotList(kid,slot){return tasks().filter(t=>(t.kids||[]).includes(kid)&&t.slot===slot).sort((a,b)=>ordOf(a,kid)-ordOf(b,kid))}
 function tasksFor(kidId,date,slot){
   const dow=parseISO(date).getDay();
   return tasks().filter(t=>(t.kids||[]).includes(kidId)&&t.slot===slot&&(t.date?t.date===date:(t.days||[]).includes(dow)))
-    .sort((a,b)=>(a.order||0)-(b.order||0));
+    .sort((a,b)=>ordOf(a,kidId)-ordOf(b,kidId));
 }
 const isDone=(date,kidId,tid)=>!!(S.done[date]&&S.done[date][kidId+'_'+tid]);
 function slotStats(kidId,date,slot){const ts=tasksFor(kidId,date,slot);return{n:ts.length,d:ts.filter(t=>isDone(date,kidId,t.id)).length}}
@@ -398,7 +409,7 @@ function render(){
     let body;
     if(!ts.length)body='<div class="empty">'+slotLbl+' ist nichts geplant.</div>';
     else body=(all?'<div class="cheer"><span class="star" aria-hidden="true">⭐</span>Super, '+esc(x.name)+'!</div>':'')+
-      '<ul class="tasks">'+ts.map(t=>'<li><button type="button" class="task" role="checkbox" aria-checked="'+isDone(S.date,x.id,t.id)+'" data-task="'+esc(t.id)+'" data-k="'+esc(x.id)+'"><span class="ic" aria-hidden="true">'+esc(t.icon||'⭐')+'</span><span class="tt">'+esc(t.title)+'</span><span class="box">'+CHECK+'</span></button></li>').join('')+'</ul>';
+      '<ul class="tasks">'+ts.map(t=>'<li><button type="button" class="task" role="checkbox" aria-checked="'+isDone(S.date,x.id,t.id)+'" data-task="'+esc(t.id)+'" data-k="'+esc(x.id)+'"><span class="ic" aria-hidden="true">'+iconHtml(t.icon)+'</span><span class="tt">'+esc(t.title)+'</span><span class="box">'+CHECK+'</span></button></li>').join('')+'</ul>';
     return '<section class="kidcol" style="--kc:'+esc(x.color)+'"><div class="kidhead"><span class="ava" aria-hidden="true">'+esc((x.name||'?').slice(0,1).toUpperCase())+'</span><h2>'+esc(x.name)+'</h2><span class="cnt'+(all?' ok':'')+'">'+(st.n?st.d+'/'+st.n:'')+'</span></div><div class="kidbody" data-k="'+esc(x.id)+'">'+body+'</div></section>'}).join('');
   v.innerHTML=
    '<div class="week"><button type="button" class="navbtn" data-wk="-1" aria-label="Woche zurück">‹</button><div class="days">'+days+'</div><button type="button" class="navbtn" data-wk="1" aria-label="Woche vor">›</button></div>'+
@@ -442,8 +453,8 @@ function taskList(){
   const k=kids();if(!k.length)return '<div class="empty">Lege zuerst unter „Kinder“ ein Kind an.</div>';
   const ak=S.adminKid&&k.find(x=>x.id===S.adminKid)?S.adminKid:k[0].id;S.adminKid=ak;
   let h='<div class="row"><div class="chips">'+k.map(x=>'<button type="button" class="chip" data-akid="'+esc(x.id)+'" aria-pressed="'+(x.id===ak)+'">'+esc(x.name)+'</button>').join('')+'</div><span style="flex:1"></span><button class="btn primary" type="button" data-act="newtask"'+(S.readonly?' disabled':'')+'>+ Aufgabe</button></div>';
-  SLOTS.forEach(s=>{const ts=tasks().filter(t=>(t.kids||[]).includes(ak)&&t.slot===s.id);
-    h+='<div class="sgroup" style="--c:var(--'+s.id+')"><h3><i></i>'+s.label+'</h3>'+(ts.length?'<ul class="alist">'+ts.map(t=>'<li class="aitem"><span class="ic">'+esc(t.icon||'⭐')+'</span><span class="ai"><b>'+esc(t.title)+'</b><small>'+dayLabel(t)+((t.kids||[]).length>1?' · '+t.kids.length+' Kinder':'')+'</small></span><button class="btn small" type="button" data-edit="'+esc(t.id)+'">Bearbeiten</button></li>').join('')+'</ul>':'<div class="note">Noch keine Aufgaben.</div>')+'</div>'});
+  SLOTS.forEach(s=>{const ts=slotList(ak,s.id);
+    h+='<div class="sgroup" style="--c:var(--'+s.id+')"><h3><i></i>'+s.label+'</h3>'+(ts.length?'<ul class="alist">'+ts.map((t,i)=>'<li class="aitem"><span class="mv"><button type="button" data-mv="'+esc(t.id)+'|'+s.id+'|-1" aria-label="Nach oben"'+(i===0?' disabled':'')+'>▲</button><button type="button" data-mv="'+esc(t.id)+'|'+s.id+'|1" aria-label="Nach unten"'+(i===ts.length-1?' disabled':'')+'>▼</button></span><span class="ic">'+iconHtml(t.icon)+'</span><span class="ai"><b>'+esc(t.title)+'</b><small>'+dayLabel(t)+((t.kids||[]).length>1?' · '+t.kids.length+' Kinder':'')+'</small></span><button class="btn small" type="button" data-edit="'+esc(t.id)+'">Bearbeiten</button></li>').join('')+'</ul>':'<div class="note">Noch keine Aufgaben.</div>')+'</div>'});
   return h;
 }
 function taskForm(){
@@ -454,7 +465,7 @@ function taskForm(){
   '<div class="field"><span>Für</span><div class="chips">'+k.map(x=>'<button type="button" class="chip" data-tkid="'+esc(x.id)+'" aria-pressed="'+t.kids.includes(x.id)+'">'+esc(x.name)+'</button>').join('')+'</div></div>'+
   '<div class="field"><span>Wann</span><div class="chips">'+dayBtns+'</div><div class="chips"><button type="button" class="chip" data-tpreset="all">Täglich</button><button type="button" class="chip" data-tpreset="wk">Mo–Fr</button><button type="button" class="chip" data-tpreset="we">Wochenende</button></div>'+
   '<label class="field" style="max-width:260px;margin-top:6px"><span>oder nur an einem Datum</span><input class="inp" type="date" id="tDate" value="'+esc(t.date||'')+'"></label></div>'+
-  '<div class="field"><span>Bild</span><div class="emojis">'+EMOJIS.map(e=>'<button type="button" data-temoji="'+e+'" aria-pressed="'+(t.icon===e)+'">'+e+'</button>').join('')+'</div></div>'+
+  '<div class="field"><span>Bild</span><div class="emojis">'+EMOJIS.filter((e,i,a)=>a.indexOf(e)===i).map(e=>'<button type="button" data-temoji="'+e+'" aria-pressed="'+(t.icon===e)+'" aria-label="'+(e==='svg:hockey'?'Eishockeyspieler':e)+'">'+iconHtml(e)+'</button>').join('')+'</div></div>'+
   '<div class="row"><button class="btn primary" type="button" data-act="savetask">Speichern</button><button class="btn" type="button" data-act="canceltask">Abbrechen</button><span style="flex:1"></span>'+
   (t.isNew?'':(S.confirm==='task'?'<span class="sub">Wirklich löschen?</span><button class="btn danger" type="button" data-act="deltask">Ja, löschen</button><button class="btn" type="button" data-act="noconfirm">Nein</button>':'<button class="btn danger" type="button" data-act="askdel">Löschen</button>'))+'</div>';
 }
@@ -550,6 +561,10 @@ document.addEventListener('click',ev=>{
     if(d.tpreset){t.days=d.tpreset==='all'?[0,1,2,3,4,5,6]:d.tpreset==='wk'?[1,2,3,4,5]:[6,0];t.date=''}
     if(d.temoji)t.icon=d.temoji;
     renderLayer();return}
+  if(d.mv){const[id,slot,dir]=d.mv.split('|');const kid=S.adminKid;const list=slotList(kid,slot).map(t=>t.id);
+    const i=list.indexOf(id),j=i+(+dir);if(i<0||j<0||j>=list.length)return;[list[i],list[j]]=[list[j],list[i]];
+    const s=setupCopy();list.forEach((tid,n)=>{const t=s.tasks.find(x=>x.id===tid);if(t){t.orders=Object.assign({},t.orders||{});t.orders[kid]=n}});
+    saveSetup(s);renderLayer();return}
   if(d.kcol){const[id,c]=d.kcol.split('|');const s=setupCopy();const k=s.kids.find(x=>x.id===id);if(k){k.color=c;saveSetup(s)}return}
   if(d.kask){S.confirm='kid-'+d.kask;renderLayer();return}
   if(d.kdel){const s=setupCopy();s.kids=s.kids.filter(x=>x.id!==d.kdel);s.tasks=s.tasks.map(t=>Object.assign(t,{kids:(t.kids||[]).filter(x=>x!==d.kdel)})).filter(t=>t.kids.length);S.confirm=null;saveSetup(s);return}
@@ -566,7 +581,7 @@ document.addEventListener('click',ev=>{
     if(!t.title.trim()){toast('Bitte einen Namen für die Aufgabe eingeben.');return}
     if(!t.kids.length){toast('Bitte mindestens ein Kind auswählen.');return}
     if(!t.date&&!t.days.length){toast('Bitte Wochentage oder ein Datum wählen.');return}
-    const s=setupCopy();const clean={id:t.id,title:t.title.trim(),icon:t.icon,slot:t.slot,kids:t.kids,days:t.date?[]:t.days,date:t.date||'',order:t.order||Date.now()};
+    const s=setupCopy();const clean={id:t.id,title:t.title.trim(),icon:t.icon,slot:t.slot,kids:t.kids,days:t.date?[]:t.days,date:t.date||'',order:t.order||Date.now(),orders:t.orders||{}};
     const i=s.tasks.findIndex(x=>x.id===t.id);if(i>=0)s.tasks[i]=clean;else s.tasks.push(clean);
     S.edit=null;saveSetup(s).then(()=>toast('Aufgabe gespeichert'))}
   else if(a==='addkid'){const n=$('#newKid').value.trim();if(!n){toast('Bitte einen Namen eingeben.');return}

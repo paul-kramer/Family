@@ -120,16 +120,14 @@ struct TasksAdmin: View {
                     }
                     ForEach(Slot.allCases) { s in
                         Section {
-                            let ts = store.data.setup.tasks
-                                .filter { $0.kids.contains(kidID) && $0.slot == s }
-                                .sorted { $0.order < $1.order }
+                            let ts = store.slotTasks(kid: kidID, slot: s)
                             if ts.isEmpty {
                                 Text("Noch keine Aufgaben").foregroundStyle(.secondary)
                             }
                             ForEach(ts) { t in
                                 Button { editing = t } label: {
                                     HStack(spacing: 12) {
-                                        Text(t.icon).font(.title2)
+                                        TaskIcon(icon: t.icon, size: 26)
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(t.title).font(.headline)
                                             Text(t.dayLabel + (t.kids.count > 1 ? " · \(t.kids.count) Kinder" : ""))
@@ -143,6 +141,9 @@ struct TasksAdmin: View {
                                 }
                                 .buttonStyle(.plain)
                             }
+                            .onMove { from, to in
+                                store.move(kid: kidID, slot: s, from: from, to: to)
+                            }
                         } header: {
                             Label(s.label, systemImage: s.symbol).foregroundStyle(s.color)
                         }
@@ -152,6 +153,9 @@ struct TasksAdmin: View {
             .navigationTitle("Aufgaben")
             .toolbar {
                 DoneButton(onClose: onClose)
+                ToolbarItem(placement: .topBarTrailing) {
+                    EditButton()
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         var t = FamilyTask()
@@ -256,8 +260,7 @@ struct TaskEditor: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 52), spacing: 8)], spacing: 8) {
                         ForEach(Palette.emojis, id: \.self) { e in
                             Button { task.icon = e } label: {
-                                Text(e)
-                                    .font(.system(size: 30))
+                                TaskIcon(icon: e, size: 30)
                                     .frame(width: 52, height: 52)
                                     .background(RoundedRectangle(cornerRadius: 12)
                                         .fill(task.icon == e ? Color.accentColor.opacity(0.25) : Color.chip))

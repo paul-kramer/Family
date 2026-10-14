@@ -71,6 +71,10 @@ struct FamilyTask: Codable, Identifiable, Hashable {
     var days: [Int] = [1, 2, 3, 4, 5]
     var date: String = ""          // "yyyy-MM-dd" für einmalige Aufgaben, sonst leer
     var order: Double = Date().timeIntervalSince1970
+    /// Reihenfolge je Kind (Kind-ID → Position); fehlt ein Eintrag, gilt `order`.
+    var orders: [String: Double] = [:]
+
+    func position(for kid: String) -> Double { orders[kid] ?? order }
 
     var dayLabel: String {
         if !date.isEmpty, let d = Day.date(date) {
@@ -96,6 +100,7 @@ extension FamilyTask {
         days = try c.decodeIfPresent([Int].self, forKey: .days) ?? []
         date = try c.decodeIfPresent(String.self, forKey: .date) ?? ""
         order = try c.decodeIfPresent(Double.self, forKey: .order) ?? 0
+        orders = (try? c.decodeIfPresent([String: Double].self, forKey: .orders)) ?? [:]
     }
 }
 
@@ -198,10 +203,29 @@ enum Day {
     }
 }
 
+/// Zeigt ein Aufgaben-Symbol: Emoji oder eigenes Symbol (z. B. "svg:hockey").
+struct TaskIcon: View {
+    let icon: String
+    var size: CGFloat = 24
+
+    var body: some View {
+        if icon == "svg:hockey" {
+            Image(systemName: "figure.hockey")
+                .font(.system(size: size * 0.9, weight: .semibold))
+                .foregroundStyle(Color(hex: "#E0603A"))
+                .frame(width: size * 1.2, height: size * 1.2)
+                .accessibilityLabel("Eishockeyspieler")
+        } else {
+            Text(icon.isEmpty ? "⭐" : icon).font(.system(size: size))
+        }
+    }
+}
+
 enum Palette {
     static let kidColors = ["#2F6FD6", "#E0603A", "#2E9E5B", "#B04AC9", "#D69A12", "#1F9AA8"]
     static let emojis = ["🪥", "👕", "🧦", "🛏️", "🥣", "🍎", "🎒", "📚", "✏️", "🧮", "🎹", "🏒", "⚽", "🚿", "🛁",
-                         "🧸", "🧹", "🍽️", "🐶", "🌱", "💊", "📖", "🧥", "👟", "🚲", "🎨", "📞", "⏰", "🙏", "⭐"]
+                         "🧸", "🧹", "🍽️", "🐶", "🌱", "💊", "📖", "🧥", "👟", "🚲", "🎨", "📞", "⏰",
+                         "svg:hockey", "⛸️", "📦", "🧺", "🗃️", "📺", "🎮", "🙏", "⭐"]
 }
 
 extension Color {

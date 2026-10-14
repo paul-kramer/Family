@@ -44,7 +44,27 @@ final class Store {
                 t.kids.contains(kidID) && t.slot == slot &&
                 (t.date.isEmpty ? t.days.contains(wd) : t.date == key)
             }
-            .sorted { $0.order < $1.order }
+            .sorted { $0.position(for: kidID) < $1.position(for: kidID) }
+    }
+
+    /// Alle Aufgaben eines Kindes in einer Tageszeit, in seiner Reihenfolge.
+    func slotTasks(kid: String, slot: Slot) -> [FamilyTask] {
+        data.setup.tasks
+            .filter { $0.kids.contains(kid) && $0.slot == slot }
+            .sorted { $0.position(for: kid) < $1.position(for: kid) }
+    }
+
+    /// Reihenfolge nur für dieses Kind ändern.
+    func move(kid: String, slot: Slot, from: IndexSet, to: Int) {
+        var ids = slotTasks(kid: kid, slot: slot).map(\.id)
+        ids.move(fromOffsets: from, toOffset: to)
+        update { d in
+            for (n, id) in ids.enumerated() {
+                if let i = d.setup.tasks.firstIndex(where: { t in t.id == id }) {
+                    d.setup.tasks[i].orders[kid] = Double(n)
+                }
+            }
+        }
     }
 
     func isDone(_ date: Date, kid: String, task: String) -> Bool {

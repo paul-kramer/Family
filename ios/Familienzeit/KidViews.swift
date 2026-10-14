@@ -347,8 +347,7 @@ struct TaskRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Text(task.icon)
-                    .font(.system(size: 24))
+                TaskIcon(icon: task.icon, size: 24)
                     .frame(width: 32)
                 Text(task.title)
                     .font(.headline.weight(.heavy))
